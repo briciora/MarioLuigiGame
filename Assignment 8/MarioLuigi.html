@@ -1,0 +1,673 @@
+<head>
+	<title>Mario and Luigi!</title>
+	<meta charset="UTF-8">
+</head>
+<body>
+<br>
+<canvas id="myCanvas" width="600" height="600" style="border:1px solid #cccccc;"></canvas>
+
+<script type="text/javascript">
+
+var model; //for cb
+var myid = -1; //dont know id yet
+var waitingForId = false;
+
+function httpPost(url, payload, callback)
+{
+	let request = new XMLHttpRequest();
+	request.onreadystatechange = function()
+	{
+		if(request.readyState == 4)
+		{
+			if(request.status == 200)
+			callback(request.responseText);
+			else
+			{
+				if(request.status == 0 && request.statusText.length == 0)
+					alert("Connection failed");
+				else
+					alert("Server returned status " + request.status + ", " + request.statusText);
+			}
+		}
+	};
+	request.open('post', url, true);
+	request.setRequestHeader('Content-Type',
+	'application/x-www-form-urlencoded');
+	request.send(payload);
+}
+
+class Sprite
+{
+	constructor(x, y, w, h, collidedWithMario, scrollPos, needCoin, image_url, update_method, onclick_method)
+	{
+		this.x = x;
+		this.y = y;
+		this.w = w;
+		this.h = h;
+		this.collidedWithMario = collidedWithMario;
+		this.scrollPos = scrollPos;
+		this.needCoin = needCoin;
+
+		this.image = new Image();
+		this.image.src = image_url;
+		this.update = update_method;
+		this.onclick = onclick_method;
+	}
+
+	isMario()
+	{
+		return false;
+	}
+
+	isCoin()
+	{
+		return false;
+	}
+
+	draw()
+	{
+
+	}	
+
+	isPlayer()
+	{
+		return false;
+	}
+
+	set_destination(x, y)
+	{
+		this.dest_x = x;
+		this.dest_y = y;
+	}
+
+	ignore_click(x, y)
+	{
+	}
+
+	move(dx, dy)
+	{
+		this.dest_x = this.x + dx;
+		this.dest_y = this.y + dy;
+	}
+
+	go_toward_destination()
+	{
+		if(this.dest_x === undefined)
+			return;
+
+		if(this.x < this.dest_x)
+			this.x++;
+		else if(this.x > this.dest_x)
+			this.x--;
+		if(this.y < this.dest_y)
+			this.y++;
+		else if(this.y > this.dest_y)
+			this.y--;
+	}
+
+	sit_still()
+	{
+	}
+}
+
+class Mario extends Sprite
+{
+	constructor(m)
+	{
+
+		super(0, 500, 60, 95, false, 0, false, "mario1.png", Mario.prototype.update, 0);
+
+		this.prev_x = 0;
+		this.prev_y = 0;
+		this.framesInAir = 0; 
+		this.vert_vel = 0; //gravity
+		this.picture = 1; 
+
+		this.m = m;
+	}
+
+	isMario()
+	{
+		return true;
+	}
+
+	doesCollide(b)
+	{
+		b.collidedWithMario = false;
+		
+		if(b.isMario())
+		{
+			return false;
+		}
+		
+		//lengths of all sides of the brick
+		let brickRight = b.x+b.w;
+		let brickLeft = b.x;
+		let brickTop = b.y;
+		let brickBottom = b.y+b.h;
+		
+		//lengths of all sides of the mario image
+		let marioRight = this.x+this.w;
+		let marioLeft = this.x;
+		let marioTop = this.y;
+		let marioBottom = this.y+this.h;
+		
+		//place to store the previous position if there is a collision (this is how to correct it)
+		let prevRight = this.prev_x + this.w;
+		let prevLeft = this.prev_x;
+		let prevTop = this.prev_y;
+		let prevBottom = this.prev_y + this.h;
+				
+		if(marioRight <= brickLeft)
+			return false;
+		if(marioLeft >= brickRight)
+			return false;
+		if(marioBottom <= brickTop) // assumes bigger is downward
+			return false;
+		if(marioTop >= brickBottom) // assumes bigger is downward
+			return false;
+		
+		//hit right side of brick
+		if(prevLeft >= brickRight && marioLeft < brickRight)
+		{
+			this.x = brickRight;
+
+		}
+		
+		//hit left side of brick
+		if(prevRight <= brickLeft && marioRight > brickLeft)
+		{
+			this.x = brickLeft - this.w;
+		}
+		
+
+		//hit top of brick or on ground
+		if(prevBottom <= brickTop && marioBottom > brickTop)
+		{
+			this.vert_vel = 0;
+			this.y = brickTop-this.h;
+			
+			this.framesInAir = 0;
+		}
+		
+		//hit bottom of brick
+		if(prevTop >= brickBottom && marioTop < brickBottom)
+		{
+			this.vert_vel = 4;
+			this.y = brickBottom;
+			
+			b.collidedWithMario = true;
+		}
+		
+		return true;
+	}
+
+
+	update()
+	{
+		this.image.src = "mario" + this.picture + ".png";
+
+		this.framesInAir++;
+		
+		this.vert_vel += 1.2;
+		this.y += this.vert_vel;
+		
+		for(let i = 0; i < this.m.sprites.length; i++)
+		{ 			
+			let b = this.m.sprites[i]; //get brick i out of model 			
+			this.doesCollide(b);
+		}
+		
+		this.prev_x = this.x;
+		this.prev_y = this.y;
+		
+	}
+
+	draw(ctx)
+	{
+		ctx.drawImage(this.image, this.x, this.y);
+	}
+}
+class Luigi extends Sprite
+{
+	constructor(m)
+	{
+		super(100, 405, 95, 95, false, 0, false, "luigi.png", Luigi.prototype.update, 0);
+
+		this.prev_x = 0;
+		this.prev_y = 0;
+		this.framesInAir = 0; 
+		this.vert_vel = 0; //gravity
+		this.picture = 1; 
+
+		this.m = m;
+	}
+
+	isMario()
+	{
+		return true;
+	}
+
+	doesCollide(b)
+	{
+		b.collidedWithMario = false;
+		
+		if(b.isMario())
+		{
+			return false;
+		}
+		
+		//lengths of all sides of the brick
+		let brickRight = b.x+b.w;
+		let brickLeft = b.x;
+		let brickTop = b.y;
+		let brickBottom = b.y+b.h;
+		
+		//lengths of all sides of the mario image
+		let marioRight = this.x+this.w;
+		let marioLeft = this.x;
+		let marioTop = this.y;
+		let marioBottom = this.y+this.h;
+		
+		//place to store the previous position if there is a collision (this is how to correct it)
+		let prevRight = this.prev_x + this.w;
+		let prevLeft = this.prev_x;
+		let prevTop = this.prev_y;
+		let prevBottom = this.prev_y + this.h;
+				
+		if(marioRight <= brickLeft)
+			return false;
+		if(marioLeft >= brickRight)
+			return false;
+		if(marioBottom <= brickTop) // assumes bigger is downward
+			return false;
+		if(marioTop >= brickBottom) // assumes bigger is downward
+			return false;
+		
+		//hit right side of brick
+		if(prevLeft >= brickRight && marioLeft < brickRight)
+		{
+			this.x = brickRight;
+
+		}
+		
+		//hit left side of brick
+		if(prevRight <= brickLeft && marioRight > brickLeft)
+		{
+			this.x = brickLeft - this.w;
+		}
+		
+
+		//hit top of brick or on ground
+		if(prevBottom <= brickTop && marioBottom > brickTop)
+		{
+			this.vert_vel = 0;
+			this.y = brickTop-this.h;
+			
+			this.framesInAir = 0;
+		}
+		
+		//hit bottom of brick
+		if(prevTop >= brickBottom && marioTop < brickBottom)
+		{
+			this.vert_vel = 4;
+			this.y = brickBottom;
+			
+			b.collidedWithMario = true;
+		}
+	}
+	update()
+	{
+		
+			this.framesInAir++;
+			
+			this.vert_vel += 1.2;
+			this.y += this.vert_vel;
+			
+			for(let i = 0; i < this.m.sprites.length; i++)
+			{ 			
+				let b = this.m.sprites[i]; //get brick i out of model 			
+				this.doesCollide(b);
+			}
+			
+			this.prev_x = this.x;
+			this.prev_y = this.y;
+	}
+
+	draw(ctx)
+	{
+		ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+	}
+}
+
+class Brick extends Sprite
+{
+	constructor(x_pos, y_pos, width, height, groundBrick)
+	{
+		super(x_pos, y_pos, width, height, false, 0, false, "brick_image.jpg", Brick.prototype.update, 0);
+		this.groundBrick = groundBrick;
+	}
+
+	update() 
+	{
+		
+	}
+
+	draw(ctx)
+	{
+		if(this.groundBrick == true)
+		{
+			this.image.src = "ground.png";
+			ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+		}
+		else
+		{
+			ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+		}
+	}
+
+}
+
+class CoinBlock extends Sprite
+{
+	constructor(x_pos, y_pos, width, height)
+	{
+		super(x_pos, y_pos, width, height, false, 0, false, "coinBlock_image.png", CoinBlock.prototype.update, 0);
+		this.coinCount = 5;
+
+	}
+
+	update() 
+	{		
+			if(this.collidedWithMario) 
+			{
+				this.coinCount--;
+				if(this.coinCount < 0)
+				{
+					this.needCoin = false;
+					
+				}
+				if(this.coinCount >= 0)
+				{
+					this.needCoin = true;
+				}
+			}
+	}
+
+	draw(ctx)
+	{
+		if(this.coinCount <= 0)
+		{
+			this.image.src = "coinBlockDead_image.png";
+			ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+	 		
+		}
+		else
+		{
+			ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+		}
+	}
+}
+
+class Coin extends Sprite
+{
+	constructor(x_pos, y_pos, width, height)
+	{
+		super(x_pos, y_pos, width, height, false, 0, false, "coin_image.png", Coin.prototype.update, 0);
+		this.verticalVelocity = -5;
+		this.horizontalVelocity = (50 * Math.random() - 25);
+	} 
+
+	update() 
+	{
+		this.verticalVelocity += 2;
+		this.y += this.verticalVelocity;
+		this.x += this.horizontalVelocity;
+	}
+
+	isCoin()
+	{
+		return true;
+	}
+
+	draw(ctx)
+	{
+		ctx.drawImage(this.image, this.x - this.scrollPos, this.y, this.w, this.h);
+	}
+}
+
+class Model
+{
+	constructor()
+	{
+		this.sprites = [];
+
+		this.mario = new Mario(this);
+		this.sprites.push(this.mario);
+
+		this.luigi = new Luigi(this);
+		this.sprites.push(this.luigi);
+
+		this.sprites.push(new Brick(0, 500, 200000, 596, true));
+
+	}
+
+	update()
+	{
+		for(let i = 0; i < this.sprites.length; i++)
+		{
+			this.sprites[i].scrollPos = 0;
+			this.sprites[i].update();
+			if(this.sprites[i].needCoin)
+			{
+				this.sprites.push(new Coin(this.sprites[i].x, this.sprites[i].y, this.sprites[i].w, this.sprites[i].h));
+				this.sprites[i].needCoin = false;
+			}
+		}
+		
+		//removes coins from the sprites list 
+		for(let i = 0; i < this.sprites.length; i++)
+		{
+			if(this.sprites[i].y > 1000 && this.sprites[i].isCoin())
+			{
+				this.sprites.splice(i);
+				i--;
+			}
+		}
+
+		this.sendPos(); //sends position
+	}
+
+	sendPos()
+	{
+	    // Make a JSON blob
+	    let ob = {};
+	    ob.id = myid;
+		
+		if(myid == -1)
+		{
+			if(waitingForId)
+			{
+				return;
+			}
+			waitingForId = true; //stop asking for id twice
+		}
+		else if(myid == 0)
+	    {
+	        ob.mx = this.mario.x;
+	        ob.my = this.mario.y;
+	    }
+	    else
+	    {
+	        ob.lx = this.luigi.x;
+	        ob.ly = this.luigi.y;
+	    }
+
+	    let json_string = JSON.stringify(ob);
+		console.log("Sending: " + json_string);
+	    // Send the JSON blob to the server
+	    model = this;
+	    httpPost("ajax_handler.html", json_string, this.cb);
+	}
+
+ 	cb(response)
+	{	
+		// Parse the JSON
+		console.log("Receiving: " + response);
+		let ob = JSON.parse(response);
+		myid = ob.id;
+
+		if(myid == 0)
+		{
+			model.luigi.x = ob.lx;
+			model.luigi.y = ob.ly;
+		}
+		else
+		{
+			model.mario.x = ob.mx;
+			model.mario.y = ob.my;
+		}
+
+
+	}
+}
+
+class View
+{
+
+	constructor(model, controller)
+	{
+		this.model = model;
+		this.canvas = document.getElementById("myCanvas");
+	}
+
+	update()
+	{
+		let ctx = this.canvas.getContext("2d");
+		ctx.clearRect(0, 0, 1000, 500);
+		let image = new Image();
+		image.src = "Background.png";
+		ctx.drawImage(image, 0, 0);
+
+		for(let i = 0; i < this.model.sprites.length; i++)
+		{
+			this.model.sprites[i].draw(ctx);
+		}
+	}
+}
+
+
+class Controller
+{
+	constructor(model, view)
+	{
+		this.model = model;
+		this.view = view;
+		this.key_right = false;
+		this.key_left = false;
+		this.key_up = false;
+		this.key_down = false;
+		let self = this;
+		//view.canvas.addEventListener("click", function(event) { self.onClick(event); });
+		document.addEventListener('keydown', function(event) { self.keyDown(event); }, false);
+		document.addEventListener('keyup', function(event) { self.keyUp(event); }, false);
+	}
+
+	keyDown(event)
+	{
+		if(event.keyCode == 39) this.key_right = true;
+		else if(event.keyCode == 37) this.key_left = true;
+		else if(event.keyCode == 32) this.key_up = true;
+		else if(event.keyCode == 40) this.key_down = true;
+	}
+
+	keyUp(event)
+	{
+		if(event.keyCode == 39) this.key_right = false;
+		else if(event.keyCode == 37) this.key_left = false;
+		else if(event.keyCode == 32) this.key_up = false;
+		else if(event.keyCode == 40) this.key_down = false;
+	}
+
+	update()
+	{
+		if(this.key_right)
+		{
+			if(myid == 0)
+			{
+				this.model.mario.x +=5;
+			}
+
+			else
+			{
+				this.model.luigi.x +=5;
+			}
+		}
+
+		if(this.key_left)
+		{
+			if(myid == 0)
+			{
+				this.model.mario.x -=5; 
+
+				if(this.model.mario.x < 0) 
+				{
+					this.model.mario.x = 0;
+				}
+			}
+			else 
+			{
+				this.model.luigi.x -= 5;
+
+				if(this.model.luigi.x < 0) 
+				{
+					this.model.luigi.x = 0;
+				}
+			}
+		}
+
+		if(this.key_up)
+		{
+			if(myid == 0)
+			{
+				if(this.model.mario.framesInAir < 5)
+				{
+					this.model.mario.vert_vel -= 5.4;
+				}
+			}
+			else
+			{
+				if(this.model.luigi.framesInAir < 5)
+				{
+					this.model.luigi.vert_vel -= 5.4;
+				}
+			}
+		}
+	}
+}
+
+class Game
+{
+	constructor()
+	{
+		this.model = new Model();
+		this.view = new View(this.model);
+		this.controller = new Controller(this.model, this.view);
+	}
+
+	onTimer()
+	{
+		this.controller.update();
+		this.model.update();
+		this.view.update();
+	}
+}
+
+
+let game = new Game();
+let timer = setInterval(function() { game.onTimer(); }, 40);
+
+</script>
+
+</body>
+
